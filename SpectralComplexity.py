@@ -88,12 +88,7 @@ activation_fun= {
     'minus'     :{  'np_activation'     : lambda u : (2. + u ) /np.sqrt(5),
                     'torch_activation'  : lambda u : u.add(1).multiply(1/np.sqrt(5)), # va cambiata
                     'norm'              : 1,
-                    'kernal'            : lambda u : (4.+u)/5.},
-        
-    'ReLu_pow'  :{  'np_activation'     : lambda u : np.max(0,u)**p,
-                    'torch_activation'  : lambda u : u.relu().pow(p),
-                    'norm'              : None,
-                    'kernal'            : None}, 
+                    'kernal'            : lambda u : (4.+u)/5.}
 }
 
 class Activation:
@@ -179,13 +174,13 @@ class NeuralNetwork:
         generate_hidden_torch(seed=0, ell_max=None, save=True, L_new=None):
             Generates hidden layers using PyTorch based on the specified parameters.
         
-        mean_sperimental(int_ell=None, random_seed=50):
+        mean_sperimental(int_ell=None, random_seed=50,generate=False):
             Estimates the mean experimental power spectrum.
         
         dire():
             Returns a list of directories containing generated data.
         
-        unisci_cl():
+        merge_cl():
             Merges the computed power spectra.
         
         compute_range():
@@ -269,24 +264,25 @@ class NeuralNetwork:
     
 
 
-    def mean_sperimental(self,int_ell=None,random_seed = 50):
+    def mean_sperimental(self,int_ell=None,random_seed = 50,generate=False):
         if int_ell == None:
             int_ell = [0, 3*(2**self.res)-1]
         self.cl = PowerSpectrum(self.activation,self.L, int_ell)
         self.cl.sperimental(self)
-        for i,L in enumerate(self.L) :
-            np.random.seed(random_seed)
-            field= hp.synfast(self.cl.cl_sper[i],nside=2**self.res)
-            hp.write_map(os.path.join(self.dir, 'mean',str(L)+'_'+str(self.n)+'.fits'),field,overwrite=True)
+        if generate:
+            for i,L in enumerate(self.L) :
+                np.random.seed(random_seed)
+                field= hp.synfast(self.cl.cl_sper[i],nside=2**self.res)
+                hp.write_map(os.path.join(self.dir, 'mean',str(L)+'_'+str(self.n)+'.fits'),field,overwrite=True)
 
     def dire(self):
         dir_list =  os.listdir(self.dir)
-        for el in  ['old','plot','angular','minkoski','.DS_Store','mean']:
+        for el in  ['old','plot','angular','range.csv','.DS_Store','mean']:
             if el in dir_list:
                 dir_list.remove(el) 
         return dir_list
 
-    def unisci_cl(self):
+    def merge_cl(self):
         dir_list = self.dire()
         path_out = os.path.join(self.dir,'mean')
         check_dir(path_out)
@@ -410,7 +406,8 @@ class PowerSpectrum:
         self.d = d
         self.dim_auto = self.autospazio()
         self.even = False
-
+        self.teo = False
+        self.sper= False
     def autospazio(self):
         d = self.d
         ell = self.ell
@@ -467,17 +464,23 @@ class PowerSpectrum:
     def delete_even(self):
         dis = []
         for n,_  in enumerate(self.L):
-            dis0 = self.distribution_teo[n]
-            dis0= dis0[np.arange(start=1,stop=len(dis0),step=2)]
-            dis = dis + [ dis0]
+            if self.teo:
+                dis0 = self.distribution_teo[n]
+                dis0= dis0[np.arange(start=1,stop=len(dis0),step=2)]
+                dis = dis + [ dis0]
 
-            dis1 = self.distribution_sper[n]
-            dis1= dis1[np.arange(start=1,stop=len(dis1),step=2)]
-            dis_s = dis_s + [ dis1]
-        self.distribution_sper = dis_s
-        self.distribution_teo = dis 
-        self.ell =self.ell[np.arange(start=1,stop=len(dis0),step=2)]
-        self.even = True
+            if self.sper:
+                dis1 = self.distribution_sper[n]
+                dis1= dis1[np.arange(start=1,stop=len(dis1),step=2)]
+                dis_s = dis_s + [ dis1]
+        if self.sper:
+            self.distribution_sper = dis_s
+            self.ell =self.ell[np.arange(start=1,stop=len(self.ell),step=2)]
+            self.even=True   
+        if self.teo:
+            self.distribution_teo = dis 
+            self.ell =self.ell[np.arange(start=1,stop=len(self.ell),step=2)]
+            self.even=True   
 
     def plot_sperimental(self,forma = '.-',ini=None,fine=None, dir = None):
         plt.figure()
@@ -486,10 +489,10 @@ class PowerSpectrum:
         if fine ==None:
             fine = len(self.ell)
         
-        dis = self.distribution_teo
+        dis = self.distribution_sper
         ell = self.ell        
 
-        for n,LL in enumerate(self.L_list):
+        for n,LL in enumerate(self.L):
             plt.plot(ell[ini:fine+1],dis[n][ini:fine+1],forma,label='L = ' + str(LL))
             plt.legend()
             plt.xlabel('$\ell$',usetex=True)
@@ -505,7 +508,7 @@ class PowerSpectrum:
             fine = len(self.ell)
         
         ell = self.ell[ini:fine+1]
-        for [n,LL] in enumerate(self.L_list):
+        for [n,LL] in enumerate(self.L):
             plt.figure()
             plt.plot(ell,self.distribution_sper[n][ini:fine+1],forma,label='Sperimental')
             plt.plot(ell,self.distribution_teo[n][ini:fine+1],forma,label='Theoretical')    
